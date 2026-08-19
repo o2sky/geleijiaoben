@@ -30,13 +30,13 @@ const MAX_ACCOUNTS = 0;          // 0=全部账号；改成 5 就只跑前N个�
 const ACCOUNT_START = 1;         // 从第几个账号开始（1=第一个）；配合 MAX_ACCOUNTS 实现分批：start=1 跑1~5，start=6 跑6~10
 const MAX_VIDEO = 3;             // 每账号视频次数（视频接口最严，建议≤3）
 const SKIP_BALANCE_QUERY = true; // true=跳过前后余额查询，每账号省2个请求（限流严重时强烈建议）
-const ACCOUNT_DELAY_MIN = 45000; // 账号间间隔随机下限(ms)
-const ACCOUNT_DELAY_MAX = 90000; // 账号间间隔随机上限(ms)  ← 随机=不像脚本
+const ACCOUNT_DELAY_MIN = 3000; // 账号间间隔随机下限(ms)
+const ACCOUNT_DELAY_MAX = 5000; // 账号间间隔随机上限(ms)  ← 随机=不像脚本
 const BASE_DELAY_MIN = 8000;     // 普通请求间隔随机下限(ms)
-const BASE_DELAY_MAX = 15000;    // 普通请求间隔随机上限(ms)
-const VIDEO_DELAY_MIN = 20000;   // 视频请求间隔随机下限(ms)
-const VIDEO_DELAY_MAX = 30000;   // 视频请求间隔随机上限(ms)
-const RETRY_WAIT = 120000;       // 遇到"次数过多"限流时，等这么久再跑下一个账号(ms)
+const BASE_DELAY_MAX = 1000;    // 普通请求间隔随机上限(ms)
+const VIDEO_DELAY_MIN = 2000;   // 视频请求间隔随机下限(ms)
+const VIDEO_DELAY_MAX = 3000;   // 视频请求间隔随机上限(ms)
+const RETRY_WAIT = 5000;       // 遇到"次数过多"限流时，等这么久再跑下一个账号(ms)
 const MAX_LIMITED_STOP = 3;      // 连续 N 个账号全被限流就终止本轮，避免浪费请求
 let hitLimit = false;            // 是否命中限流（内部标志）
 let consecutiveLimited = 0;      // 连续限流计数
