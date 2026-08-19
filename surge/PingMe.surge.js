@@ -12,7 +12,7 @@
  *
  * [Script]
  * PingMe抓包 = type=http-request,pattern=^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus,script-path=你的raw链接/PingMe.surge.js,requires-body=false,timeout=60,tag=PingMe抓包
- * PingMe签到 = type=cron,cronexp="30 8,20 * * *",script-path=你的raw链接/PingMe.surge.js,timeout=120,tag=PingMe签到
+ * PingMe签到 = type=cron,cronexp="30 8,20 * * *",script-path=你的raw链接/PingMe.surge.js,timeout=300,tag=PingMe签到
  *
  * [MITM]
  * hostname = %APPEND% api.pingmeapp.net
@@ -25,6 +25,11 @@
  * 2. 先打开 PingMe App 触发一次请求完成"抓包入库"，再手动运行一次 PingMe签到 脚本验证签到逻辑。
  * 3. PingMe 账号数据存储在 $persistentStore 的 key：pingme_accounts_v1（数组结构，
  *    带指纹去重、别名、UA随机化种子），可在 Surge 的"持久化存储"里查看/清空。
+ * 4. 【重要】签到流程里每个账号要领 MAX_VIDEO(默认5) 次视频奖励，每次间隔 VIDEO_DELAY
+ *    (默认8秒)，单账号光是这部分就要 30+ 秒，多账号顺序执行会更久。cron 的 timeout
+ *    务必设置得比脚本内部 CRON_TIME_BUDGET_MS（默认280秒）大，比如 timeout=300，
+ *    否则会被 Surge 强制杀掉、拿不到任何签到结果通知（[Script Timeout]）。
+ *    如果账号多、时间还是不够，可以调小 MAX_VIDEO 或把多个账号拆到多个 cron 时间点跑。
  */
 
 ////////////////////////////////////////////////////////////////////////////
@@ -140,6 +145,11 @@ const SECRET = '0fOiukQq7jXZV2GRi9LGlO';
 const MAX_VIDEO = 5;
 const VIDEO_DELAY = 8000;
 const ACCOUNT_GAP = 3500;
+// cron 的 [Script] 配置里 timeout 建议设置成 300 或更高（视频奖励环节本身就需要
+// MAX_VIDEO * VIDEO_DELAY 秒左右）。这里再加一层内部时间预算保护：一旦跑的时间
+// 接近这个预算，就提前收尾发通知，而不是被外层 timeout 直接杀掉、什么反馈都没有。
+// 建议 CRON_TIME_BUDGET_MS 比 [Script] 里配置的 timeout（单位秒）小 15~20 秒。
+const CRON_TIME_BUDGET_MS = 280000;
 const IOS_VERSIONS = ['17.5.1','17.6.1','17.4.1','17.2.1','16.7.8','17.6','17.3.1','18.0.1','17.1.2','16.6.1'];
 const IOS_SCALES = ['2.00','3.00','3.00','2.00','3.00'];
 const IPHONE_MODELS = ['iPhone14,3','iPhone13,3','iPhone15,3','iPhone16,1','iPhone14,7','iPhone13,2','iPhone15,2','iPhone12,1'];
@@ -286,14 +296,15 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 function httpFetch(opts) {
     return new Promise((resolve, reject) => {
-        $httpClient.get(opts, (error, response, body) => {
+        // 给单次请求设置超时上限，避免某次请求"挂住"导致整个脚本被外层timeout强杀
+        $httpClient.get({ timeout: 15000, ...opts }, (error, response, body) => {
             if (error) { reject({ error: String(error) }); return; }
             resolve({ status: response && response.status, headers: response && response.headers, body });
         });
     });
 }
 
-function runAccount(acc, index, total) {
+function runAccount(acc, index, total, deadlineAt) {
     const email = getEmail(acc);
     const tag = `[账号${index+1}/${total} ${acc.alias || acc.id}]`;
     const ua = buildUA(acc.baseUA, acc.uaSeed);
@@ -319,6 +330,10 @@ function runAccount(acc, index, total) {
         let i = 0;
         function next() {
             if (i >= count) return Promise.resolve();
+            if (Date.now() >= deadlineAt) {
+                msgs.push(`⏭ 时间预算不足，跳过剩余 ${count - i} 个视频奖励`);
+                return Promise.resolve();
+            }
             return new Promise(resolve => {
                 setTimeout(() => {
                     i++;
@@ -458,12 +473,21 @@ function runPingMeCron() {
     const total = ids.length;
     const results = [];
     const deadIds = [];
+    const cronDeadlineAt = Date.now() + CRON_TIME_BUDGET_MS;
     let chain = Promise.resolve();
     ids.forEach((id, idx) => {
-        chain = chain.then(() => runAccount(store.accounts[id], idx, total))
+        chain = chain.then(() => {
+            if (Date.now() >= cronDeadlineAt) {
+                results.push(`[账号${idx+1}/${total} ${store.accounts[id].alias || id}]\n⏭ 时间预算不足，本轮跳过`);
+                return null;
+            }
+            return runAccount(store.accounts[id], idx, total, cronDeadlineAt);
+        })
             .then(r => {
-                results.push(r.text);
-                if (r.deregistered) deadIds.push(id);
+                if (r) {
+                    results.push(r.text);
+                    if (r.deregistered) deadIds.push(id);
+                }
             })
             .then(() => idx < ids.length - 1 ? sleep(ACCOUNT_GAP) : null);
     });
