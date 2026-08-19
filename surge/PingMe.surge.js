@@ -262,6 +262,12 @@ function isDeregistered(msg) {
     return typeof msg === 'string' && msg.indexOf('已被注销') !== -1;
 }
 
+// 判断账号是不是"真实抓到的"账号，而不是测试触发写进去的空壳数据
+function isValidAccount(acc) {
+    const p = acc && acc.capture && acc.capture.paramsRaw;
+    return !!(p && (p.sign || p.uniquedeviceid));
+}
+
 function removeAccounts(store, ids) {
     const removed = [];
     ids.forEach(id => {
@@ -385,8 +391,19 @@ function runAccount(acc, index, total) {
 
 // ---- PingMe 抓包入库分支：http-request 命中 queryBalanceAndBonus 时调用 ----
 function runPingMeCapture() {
-    const paramsRaw = parseRawQuery($request.url);
+    // Surge 脚本面板手动点"运行"测试时，会发一个假请求（通常是 http://www.apple.com/）
+    // 来触发脚本，而不是真实的 PingMe 流量。这里做校验，避免把空数据当账号存进去。
+    const url = $request.url || '';
+    const paramsRaw = parseRawQuery(url);
     const headersMap = normalizeHeaderNameMap($request.headers || {});
+
+    const isRealPingMeRequest = url.includes(PINGME_HOST) && (paramsRaw.sign || paramsRaw.uniquedeviceid);
+    if (!isRealPingMeRequest) {
+        console.log(`【${scriptName}】忽略非真实请求（可能是手动测试触发）：${url}`);
+        pingmeNotify('⚠️ 未捕获到有效账号', '这次触发不是真实的 PingMe 请求（可能是手动点了"运行"测试），已忽略，不会入库。\n请打开 PingMe App 触发一次真实请求再试。');
+        $done({});
+        return;
+    }
     let baseUA = '';
     Object.keys(headersMap).forEach(k => { if (k.toLowerCase() === 'user-agent') baseUA = headersMap[k]; });
 
@@ -421,9 +438,20 @@ function runPingMeCapture() {
 // ---- PingMe 定时签到分支：cron 触发（无 $request）时调用 ----
 function runPingMeCron() {
     const store = loadStore();
+
+    // 自愈：清掉之前手动测试触发写进去的无效空壳账号
+    const invalidIds = store.order.filter(id => store.accounts[id] && !isValidAccount(store.accounts[id]));
+    let purgedNote = '';
+    if (invalidIds.length) {
+        const purged = removeAccounts(store, invalidIds);
+        saveStore(store);
+        purgedNote = `\n🧹 已清理无效账号：${purged.join('、')}`;
+        console.log(`【${scriptName}】清理无效账号：${invalidIds.join(',')}`);
+    }
+
     const ids = store.order.filter(id => store.accounts[id]);
     if (!ids.length) {
-        pingmeNotify('⚠️ 未抓到任何账号', '请先打开 PingMe 触发抓包');
+        pingmeNotify('⚠️ 未抓到任何账号', '请先打开 PingMe 触发抓包' + purgedNote);
         $done();
         return;
     }
@@ -447,7 +475,7 @@ function runPingMeCron() {
             saveStore(freshStore);
             if (removed.length) extra = `\n———\n🗑 已移除注销账号：${removed.join('、')}（剩余${freshStore.order.length}个）`;
         }
-        pingmeNotify(`🎉 全部完成 (${total}个账号)`, results.join('\n———\n') + extra);
+        pingmeNotify(`🎉 全部完成 (${total}个账号)`, results.join('\n———\n') + extra + purgedNote);
         $done();
     }).catch(err => {
         pingmeNotify('❌ 任务异常', results.join('\n———\n') + '\n' + (err.error || String(err)));
