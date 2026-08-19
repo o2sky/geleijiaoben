@@ -296,8 +296,10 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 function httpFetch(opts) {
     return new Promise((resolve, reject) => {
-        // 给单次请求设置超时上限，避免某次请求"挂住"导致整个脚本被外层timeout强杀
-        $httpClient.get({ timeout: 15000, ...opts }, (error, response, body) => {
+        // Surge $httpClient 的 timeout 单位是"秒"，不是毫秒！之前误用15000（=15000秒≈4小时），
+        // 相当于没设超时保护。这里改成 15（秒），单次请求卡住会在15秒内报错走重试逻辑，
+        // 而不是一直空等到脚本被外层强杀。
+        $httpClient.get({ timeout: 15, ...opts }, (error, response, body) => {
             if (error) { reject({ error: String(error) }); return; }
             resolve({ status: response && response.status, headers: response && response.headers, body });
         });
@@ -362,6 +364,7 @@ function runAccount(acc, index, total, deadlineAt) {
     }
 
     return fetchApi('queryBalanceAndBonus').then(res => {
+        console.log(`${tag} 查询余额响应：${res && res.body}`);
         try {
             const d = JSON.parse(res.body);
             if (d.retcode === 0) msgs.push(`💰 余额：${d.result.balance} Coins`);
@@ -452,6 +455,7 @@ function runPingMeCapture() {
 
 // ---- PingMe 定时签到分支：cron 触发（无 $request）时调用 ----
 function runPingMeCron() {
+    console.log(`【${scriptName}】cron 签到开始`);
     const store = loadStore();
 
     // 自愈：清掉之前手动测试触发写进去的无效空壳账号
