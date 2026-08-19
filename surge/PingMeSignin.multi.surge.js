@@ -95,8 +95,9 @@ async function startTasks() {
                 await $.wait(RETRY_WAIT);
                 hitLimit = false;
             } else {
-                console.log(`⏳ 账号间休息 ${ACCOUNT_DELAY / 1000} 秒...`);
-                await $.wait(ACCOUNT_DELAY);
+                const accountDelay = rand(ACCOUNT_DELAY_MIN, ACCOUNT_DELAY_MAX);
+                console.log(`⏳ 账号间休息 ${accountDelay / 1000} 秒...`);
+                await $.wait(accountDelay);
             }
         }
         const res = await runOne(captureList[i]);
