@@ -11,8 +11,8 @@
  * ============================ Surge 配置 ============================
  *
  * [Script]
- * PingMe抓包 = type=http-request,pattern=^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus,script-path=你的raw链接/PingMe.surge.js,requires-body=false,timeout=60,tag=PingMe抓包
- * PingMe签到 = type=cron,cronexp="30 8,20 * * *",script-path=你的raw链接/PingMe.surge.js,timeout=300,tag=PingMe签到
+ * PingMe抓包 = type=http-request,pattern=^https:\/\/api\.pingmeapp\.net\/app\/queryBalanceAndBonus,script-path=https://raw.githubusercontent.com/o2sky/geleijiaoben/refs/heads/main/surge/PingMe.surge.js,requires-body=false,timeout=60,tag=PingMe抓包
+ * PingMe签到 = type=cron,cronexp="30 8,20 * * *",script-path=https://raw.githubusercontent.com/o2sky/geleijiaoben/refs/heads/main/surge/PingMe.surge.js,timeout=300,tag=PingMe签到
  *
  * [MITM]
  * hostname = %APPEND% api.pingmeapp.net
